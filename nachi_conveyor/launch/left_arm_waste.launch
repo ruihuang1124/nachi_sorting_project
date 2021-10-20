@@ -1,0 +1,22 @@
+<launch>
+    <arg name="ns_prefix" default="/left_arm" />
+    <arg name="arm" default="left_arm" />
+    <!-- <node pkg="nachi_conveyor" type="pub_test_node" name="pub_segInfo_test" output="screen">
+    </node> -->
+    <node pkg="nachi_conveyor" type="conveyor_left_arm_waste" name="left_arm_waste" output="screen">
+        <param name="conveyor_id" value="$(arg ns_prefix)/conveyor_id" />
+        <param name="conveyor_tracking" value="$(arg ns_prefix)/conveyor_tracking" />
+        <param name="/left_arm_grasp_times" type="int" value="0" />
+        <param name="lTerminal" value="1426" />
+        <param name="WorkSpaceLimitY" value="250" />
+        <param name="WorkSpaceLimitX1" value="-120" />
+        <param name="WorkSpaceLimitX2" value="80" />
+        <param name="WorkSpaceLimitZ1" value="-10" />
+        <param name="WorkSpaceLimitZ2" value="100" />
+        <param name="FollowLength" value="20" />
+        <param name="AdjustZ" value="5" />
+        
+        <!-- <param name="left_grasp_times" value= "0" />
+        <param name="right_grasp_times" value= "0" /> -->
+    </node>
+</launch>

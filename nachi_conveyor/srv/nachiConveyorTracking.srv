@@ -1,0 +1,18 @@
+# Conveyor Tracking Control service
+
+# Requests
+# upper_limit: the value of conveyor tracking upper limit
+# lower_limit: the value of conveyor tracking lower limit
+# shift_pose:  the value for shift registor R1 of robot:
+# [deltaX, deltaY, deltaZ, deltaRX, deltaRY, deltaRZ]
+
+# Responses:
+
+std_msgs/Header header
+int32 upper_limit
+int32 lower_limit
+float64[6] shift_pose
+---
+uint8 SUCCEEDED=0
+uint8 FAILED=1
+uint8 result_status

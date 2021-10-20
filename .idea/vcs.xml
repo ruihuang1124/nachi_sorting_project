@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="VcsDirectoryMappings">
+    <mapping directory="$PROJECT_DIR$" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/franka_ros" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/libfranka" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/libfranka/common" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/nachi_conveyor" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/nachi_dual_arm" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/node_example" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/panda_moveit_config" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/robotiq" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/roport-v2" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/segmentation_srv" vcs="Git" />
+  </component>
+</project>

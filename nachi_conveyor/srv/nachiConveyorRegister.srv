@@ -1,0 +1,11 @@
+# Execute the pose goal for given planning group
+
+# Requests
+# yes_or_not: if you want to get the value of conveyor's registor
+
+
+
+# std_msgs/Header header
+bool Get_Conveyor_value
+---
+float32 Register_value

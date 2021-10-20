@@ -1,0 +1,9 @@
+sensor_msgs/Image color_input
+sensor_msgs/Image depth_input
+---
+uint8 SUCCEEDED
+uint8 FAILED
+uint8 result_status
+geometry_msgs/PoseArray topk_grasps
+string[] class_names
+std_msgs/Header header

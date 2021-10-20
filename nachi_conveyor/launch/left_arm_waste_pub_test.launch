@@ -1,0 +1,6 @@
+<launch>
+    <arg name="ns_prefix" default="/left_arm" />
+    <arg name="arm" default="left_arm" />
+    <node pkg="nachi_conveyor" type="pub_test_node" name="pub_segInfo_test" output="screen">
+    </node>
+</launch>

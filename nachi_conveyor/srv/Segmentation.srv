@@ -1,0 +1,8 @@
+sensor_msgs/Image color_input
+sensor_msgs/Image depth_input
+---
+uint8 SUCCEEDED
+uint8 FAILED
+uint8 result_status
+geometry_msgs/PoseStamped best_grasp
+string class_name
