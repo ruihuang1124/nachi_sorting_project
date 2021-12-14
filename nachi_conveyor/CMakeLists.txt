@@ -144,7 +144,8 @@ add_library(head_src
 ## The recommended prefix ensures that target names across packages don't collide
 # add_executable(${PROJECT_NAME}_node src/nachi_conveyor_node.cpp)
 add_executable(conveyor_left_arm_waste src/conveyor_left_arm_waste.cpp)
-add_executable(pub_test_node src/pub_test_node.cpp)
+add_executable(conveyor_right_arm_waste src/conveyor_right_arm_waste.cpp)
+# add_executable(pub_test_node src/pub_test_node.cpp)
 
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the
@@ -156,7 +157,8 @@ add_executable(pub_test_node src/pub_test_node.cpp)
 ## same as for the library above
 add_dependencies(head_src ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 add_dependencies(conveyor_left_arm_waste ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
-add_dependencies(pub_test_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+add_dependencies(conveyor_right_arm_waste ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+# add_dependencies(pub_test_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 ## Specify libraries to link a library or executable target against
 # target_link_libraries(${PROJECT_NAME}_node
@@ -171,10 +173,15 @@ target_link_libraries(conveyor_left_arm_waste
   ${catkin_LIBRARIES}
 )
 
-target_link_libraries(pub_test_node
+target_link_libraries(conveyor_right_arm_waste
   head_src
   ${catkin_LIBRARIES}
 )
+
+# target_link_libraries(pub_test_node
+#   head_src
+#   ${catkin_LIBRARIES}
+# )
 
 #############
 ## Install ##

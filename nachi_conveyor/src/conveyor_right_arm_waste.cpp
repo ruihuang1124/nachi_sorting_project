@@ -12,13 +12,13 @@
 int main(int argc, char **argv)
 {
     setlocale(LC_ALL,"");
-    ros::init(argc,argv,"conveyor_left_arm_grasp");
+    ros::init(argc,argv,"conveyor_right_arm_grasp");
     ros::NodeHandle nh;
     ros::NodeHandle pnh("~");
-    std::string mode = "robot2";
-    conveyor_tracking_ns::ConveyorTrackingCommander left_commander(nh, pnh, mode);
-    left_commander.test();
-    ros::Subscriber sub = nh.subscribe("/sorting_line/robot2",20,&conveyor_tracking_ns::ConveyorTrackingCommander::goPikcing,&left_commander);
+    std::string mode = "robot1";
+    conveyor_tracking_ns::ConveyorTrackingCommander right_commander(nh, pnh, mode);
+    right_commander.test();
+    ros::Subscriber sub = nh.subscribe("/sorting_line/robot1",20,&conveyor_tracking_ns::ConveyorTrackingCommander::goPikcing,&right_commander);
     ros::AsyncSpinner spinner(4);
     spinner.start();
     ros::waitForShutdown();

@@ -1,0 +1,6 @@
+<launch>
+  <include file="$(find nachi_conveyor)/launch/left_arm_waste.launch">
+  </include>
+  <include file="$(find nachi_conveyor)/launch/right_arm_waste.launch">
+  </include>
+</launch>

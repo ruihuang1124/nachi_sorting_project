@@ -1,11 +1,9 @@
 <launch>
     <rosparam file="$(find nachi_conveyor)/config/default_para.yaml" command="load"/>
-    <arg name="ns_prefix" default="/robot2" />
-    <arg name="arm" default="left_arm" />
-    <!-- <node pkg="nachi_conveyor" type="pub_test_node" name="pub_segInfo_test" output="screen">
-    </node> -->
+    <arg name="ns_prefix" default="/robot1" />
+    <arg name="arm" default="right_arm" />
     <param name="$(arg ns_prefix)/grasp_time" type="int" value="0" />
-    <node pkg="nachi_conveyor" type="conveyor_left_arm_waste" name="left_arm_waste" output="screen">
+    <node pkg="nachi_conveyor" type="conveyor_right_arm_waste" name="right_arm_waste" output="screen">
         <param name="conveyor_id" value="$(arg ns_prefix)/conveyor_id" />
         <param name="conveyor_tracking" value="$(arg ns_prefix)/conveyor_tracking" />
     </node>

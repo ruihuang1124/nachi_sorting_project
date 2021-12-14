@@ -12,6 +12,8 @@ std_msgs/Header header
 int32 upper_limit
 int32 lower_limit
 float64[6] shift_pose
+int32 ifRegisterReset
+int32 material_Type
 ---
 uint8 SUCCEEDED=0
 uint8 FAILED=1

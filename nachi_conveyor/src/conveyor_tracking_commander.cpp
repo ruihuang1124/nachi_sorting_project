@@ -9,37 +9,16 @@
 #include "nachi_conveyor/nachiConveyorTracking.h"
 #include "nachi_conveyor/SegmentationInfo.h"
 #include <math.h>
-
-//Some default const values:
-// const float TestValue = 0.001;
-
+#include <eigen3/Eigen/Dense>
+#include <time.h>
+const float radiToDegree = 180 / 3.1415926;
 
 namespace conveyor_tracking_ns
 {
-    ConveyorTrackingCommander::ConveyorTrackingCommander(ros::NodeHandle& nh, ros::NodeHandle& pnh) : 
-    nh_(nh), pnh_(pnh)
+    ConveyorTrackingCommander::ConveyorTrackingCommander(ros::NodeHandle& nh, ros::NodeHandle& pnh, const std::string& mode) : 
+    nh_(nh), pnh_(pnh), mode_(mode)
     {
-        // lTerminal = 1460;//It depends on the distense between P and PPai in Y- direction of robot coordinate;
-        // WorkSpaceLimitY = 250;//It depends on where you put the Point P, in default, we put the Point P with y=0.0 with robot coordinate;
-        // WorkSpaceLimitX1 = -122;
-        // WorkSpaceLimitX2 = 80;
-        // WorkSpaceLimitZ1 = -10;
-        // WorkSpaceLimitZ2 = 100;
-        // FollowLength = 100;
-        pnh_.getParam("lTerminal", lTerminal);
-        pnh_.getParam("WorkSpaceLimitY", WorkSpaceLimitY);
-        pnh_.getParam("WorkSpaceLimitX1", WorkSpaceLimitX1);
-        pnh_.getParam("WorkSpaceLimitX2", WorkSpaceLimitX2);
-        pnh_.getParam("WorkSpaceLimitZ1", WorkSpaceLimitZ1);
-        pnh_.getParam("WorkSpaceLimitZ2", WorkSpaceLimitZ2);
-        pnh_.getParam("FollowLength", FollowLength);
-        pnh_.getParam("AdjustZ", AdjustZ);
-        SumRead = 0.0;
-        SumValue = 0.0;
-        pnh_.getParam("conveyor_id", conveyor_id);
-        pnh_.getParam("conveyor_tracking", conveyor_tracking);
-        conveyorRegistorReadClient = nh_.serviceClient<nachi_conveyor::nachiConveyorRegister>(conveyor_id);
-        conveyorTrackingControlClient = nh_.serviceClient<nachi_conveyor::nachiConveyorTracking>(conveyor_tracking);
+        init();
     }
 
     ConveyorTrackingCommander::~ConveyorTrackingCommander()
@@ -47,97 +26,156 @@ namespace conveyor_tracking_ns
 
     }
 
-    bool ConveyorTrackingCommander::getShiftPose(float currentRegisterValue, int currentGraspTimes, float SP[7], float targetRegisterValue, int targetGraspTimes)
-    {        
-        if (currentRegisterValue<0||currentGraspTimes<0||targetGraspTimes<0||targetRegisterValue<0)//All the wrong conditions, to be added and finished!!!!!!!!!!!!!!!!!!!!!!!!!
-        {
-            ROS_ERROR("Target Pose is invilid!!!");
-            return false;
-            /* code */
-        }else{
-            //1) first calculate the DeltaYTemp2: DeltaY = DeltaYTemp2+DeltaYTemp1;
-            float DeltaYTemp2 = 0;
-            float SumTemp1=currentRegisterValue;//T(i-1,i)
-            float SumTemp2=targetRegisterValue;//M(j,i)
-            int listLocation = currentGraspTimes%10000;
-            if (listLocation == 0)
-            {
-                SumRead = 0.0;
-                SumValue = 0.0;
-                /* code */
-            }else{
-                SumRead = GraspFiles[listLocation-1][2]+GraspFiles[listLocation-1][0];
-                GraspFiles[listLocation][2] = SumRead;//make sure nothing goes wrong when targetGraspTimes == currentGraspTimes, it can update the GraspFile so the SumValue is the right value;
-                SumValue = GraspFiles[targetGraspTimes][2];//Some problems here, if the targetGraspTimes =             
-            }
-            ROS_ERROR("The SumRead value When calculate the shift pose is:.%2f",SumRead);
-            ROS_ERROR("The SumValue value When calculate the shift pose is:.%2f",SumValue);
-            SumTemp1 = currentRegisterValue + SumRead;
-            SumTemp2 = targetRegisterValue + SumValue;
-            DeltaYTemp2 = -(SumTemp1 - SumTemp2);//anti (SumTemp1-SumTemp2);
-            //2) Then to calculate the DeltaXTemp1,DeltaYTemp1,DeltaZTemp1;
-            float DeltaPosition[4] = {SP[0]-PointPPaiCposition[0],SP[1]-PointPPaiCposition[1],SP[2]-PointPPaiCposition[2],1};
-            float DeltaXTemp1 = TransformMatrix[0][0]*DeltaPosition[0]+TransformMatrix[0][1]*DeltaPosition[1]+TransformMatrix[0][2]*DeltaPosition[2]+TransformMatrix[0][3]*DeltaPosition[3];
-            float DeltaYTemp1 = TransformMatrix[1][0]*DeltaPosition[0]+TransformMatrix[1][1]*DeltaPosition[1]+TransformMatrix[1][2]*DeltaPosition[2]+TransformMatrix[1][3]*DeltaPosition[3];
-            float DeltaZTemp1 = TransformMatrix[2][0]*DeltaPosition[0]+TransformMatrix[2][1]*DeltaPosition[1]+TransformMatrix[2][2]*DeltaPosition[2]+TransformMatrix[2][3]*DeltaPosition[3];
-            float DeltaXYZTemp1 = TransformMatrix[3][0]*DeltaPosition[0]+TransformMatrix[3][1]*DeltaPosition[1]+TransformMatrix[3][2]*DeltaPosition[2]+TransformMatrix[3][3]*DeltaPosition[3];
+    void ConveyorTrackingCommander::init()
+    {
+        pnh_.getParam("lTerminal", lTerminal_);
+        pnh_.getParam("WorkSpaceLimitY", WorkSpaceLimitY_);
+        pnh_.getParam("WorkSpaceLimitY2", WorkSpaceLimitY2);
+        pnh_.getParam("WorkSpaceLimitX1", shift_limit_x_low_);
+        pnh_.getParam("WorkSpaceLimitX2", shift_limit_x_upper_);
+        pnh_.getParam("WorkSpaceLimitZ1", shift_limit_z_low_);
+        pnh_.getParam("WorkSpaceLimitZ2", shift_limit_z_upper_);
+        pnh_.getParam("FollowLength", follow_object_length_);
+        pnh_.getParam("AdjustZ", shift_pose_adjust_z_);
+        pnh_.getParam("AdjustY", shift_pose_adjust_y_);
+        pnh_.getParam("AdjustX", shift_pose_adjust_x_);
+        pnh_.getParam("conveyor_id", conveyor_registor_value_id_);
+        pnh_.getParam("conveyor_tracking", conveyor_tracking_srv_);
+        pnh_.getParam("RegisterReset", register_reset_flag_);
+        pnh_.getParam("TMatrix00", robot_to_camera_Transform_(0, 0));
+        pnh_.getParam("TMatrix01", robot_to_camera_Transform_(0, 1));
+        pnh_.getParam("TMatrix02", robot_to_camera_Transform_(0, 2));
+        pnh_.getParam("TMatrix03", robot_to_camera_Transform_(0, 3));
+        pnh_.getParam("TMatrix10", robot_to_camera_Transform_(1, 0));
+        pnh_.getParam("TMatrix11", robot_to_camera_Transform_(1, 1));
+        pnh_.getParam("TMatrix12", robot_to_camera_Transform_(1, 2));
+        pnh_.getParam("TMatrix13", robot_to_camera_Transform_(1, 3));
+        pnh_.getParam("TMatrix20", robot_to_camera_Transform_(2, 0));
+        pnh_.getParam("TMatrix21", robot_to_camera_Transform_(2, 1));
+        pnh_.getParam("TMatrix22", robot_to_camera_Transform_(2, 2));
+        pnh_.getParam("TMatrix23", robot_to_camera_Transform_(2, 3));
+        pnh_.getParam("TMatrix30", robot_to_camera_Transform_(3, 0));
+        pnh_.getParam("TMatrix31", robot_to_camera_Transform_(3, 1));
+        pnh_.getParam("TMatrix32", robot_to_camera_Transform_(3, 2));
+        pnh_.getParam("TMatrix33", robot_to_camera_Transform_(3, 3));
+        pnh_.getParam("PPaiX", base_target_point_under_camera_frame_[0]);
+        pnh_.getParam("PPaiY", base_target_point_under_camera_frame_[1]);
+        pnh_.getParam("PPaiZ", base_target_point_under_camera_frame_[2]);
+        pnh_.getParam("PPaiXYZ", base_target_point_under_camera_frame_[3]);
+        conveyorRegistorReadClient = nh_.serviceClient<nachi_conveyor::nachiConveyorRegister>(conveyor_registor_value_id_);
+        conveyorTrackingControlClient = nh_.serviceClient<nachi_conveyor::nachiConveyorTracking>(conveyor_tracking_srv_);
+        // ROS_INFO("X:%.4f,Y:%.4f,Z:%.4f,XYZ:%.4f",PointPPaiCposition[0],PointPPaiCposition[1],PointPPaiCposition[2],PointPPaiCposition[3]);
+    }
 
-            ShiftPoseTemp[0]=DeltaXTemp1;
-            ShiftPoseTemp[1]=DeltaYTemp1+DeltaYTemp2;//DeltaYTemp1+DeltaTemp1;
-            ShiftPoseTemp[2]=AdjustZ;
-            ROS_ERROR("The calcute ShiftPose is x:.%2f,y:.%2f,z:.%2f",ShiftPoseTemp[0],ShiftPoseTemp[1],ShiftPoseTemp[2]);
-            ShiftPoseTemp[3]=0;
-            ShiftPoseTemp[4]=0;
-            ShiftPoseTemp[5]=0;
-        // return ShiftPose according to the current currentRegisterValue, GraspTimes and imige's geometry_msgs/PoseStamped object_pose's position and orientation informations.
+    bool ConveyorTrackingCommander::getShiftPose(float currentRegisterValue, double targetObjectPose[7], float targetRegisterValue)
+    {
+        if (currentRegisterValue < 0 || targetRegisterValue < 0 || targetObjectPose[2] < 0.2) //TODO All the wrong conditions
+        {
+            ROS_ERROR("Received invalid target pose, won't calculate shift pose!!!");
+            return false;
+        }else{
+            float DeltaYTemp2 = currentRegisterValue-targetRegisterValue;
+            ROS_INFO("The difference between currentRegisterValue and targetRegisterValue is %.4f",DeltaYTemp2);
+            Eigen::Matrix<float, 4, 1> ShiftC,ShiftTemp;
+            ShiftC << targetObjectPose[0] - base_target_point_under_camera_frame_[0],
+                targetObjectPose[1] - base_target_point_under_camera_frame_[1],
+                targetObjectPose[2] - base_target_point_under_camera_frame_[2],
+                0.0;
+            ShiftTemp = (robot_to_camera_Transform_ * ShiftC)*1000;
+            ROS_INFO("The value of base Point is:x:.%9f,y:.%9f,.z:.%9f",base_target_point_under_camera_frame_[0],base_target_point_under_camera_frame_[1],base_target_point_under_camera_frame_[2]);
+            ROS_INFO("The receive point is: X:%.9f, Y:%.9f, Z:%.9f", targetObjectPose[0], targetObjectPose[1], targetObjectPose[2]);
+            ROS_INFO("The calculated shift pose between target object and camera base point is: DeltaX:%.2f, DeltaY:%.2f",ShiftTemp(0),ShiftTemp(1));
+            ShiftPoseTemp_[0]=ShiftTemp(0)+shift_pose_adjust_x_;
+            // ShiftPoseTemp_[1]=ShiftTemp(1)+DeltaYTemp2+shift_pose_adjust_y_;//DeltaYTemp1
+            ShiftPoseTemp_[1]=DeltaYTemp2-ShiftTemp(1);//DeltaYTemp，Here attention!!! This value is length in Y- direction of robot coordinate of target that shift from target PointPPaiCposition, not the real value that will be sent to the robot, the real value will be update when calculate the LockLimit in LockLimitCalculater!!!
+            ROS_INFO("Y value for check is:%.3f",ShiftPoseTemp_[1]);
+            ShiftPoseTemp_[2]=shift_pose_adjust_z_;
+            ROS_INFO("Finishing calcuting the ShiftPose!!");
+            ShiftPoseTemp_[3]=0;
+            ShiftPoseTemp_[4]=0;
+            //Robot with sucking cup
+            if (mode_=="robot2")
+            {
+                ShiftPoseTemp_[5] = 0;
+            }
+            //Robot with gripper
+            if (mode_=="robot1")
+            {
+                float rotation_angle_z;
+                rotation_angle_z = 2 * asin(targetObjectPose[5]);
+                ROS_INFO("The degree in z axis for rotation is:.%2f",rotation_angle_z*radiToDegree);
+                if (rotation_angle_z>=0)
+                {
+                    ShiftPoseTemp_[5] = 90 - radiToDegree*rotation_angle_z;                   
+                }
+                else
+                {
+                    ShiftPoseTemp_[5] = -90 - rotation_angle_z*radiToDegree;
+                }
+                ROS_INFO("The RZ send to the robot is:.%2f",ShiftPoseTemp_[5]);
+                if (ShiftPoseTemp_[5]>45)
+                {
+                    ShiftPoseTemp_[5] = 45;
+                }
+                if (ShiftPoseTemp_[5]<-45)
+                {
+                    ShiftPoseTemp_[5] = -45;
+                }
+                                               
+                /* code */
+            }
             return true;
         }
     }
 
-    bool ConveyorTrackingCommander::LockLimitCalculater(float SP[6])
+    bool ConveyorTrackingCommander::LockLimitCalculater(float checkedShiftPose[6])
     {
-        if (SP[0]<-100000)//All the wrong conditions, to be added and finished!!!!!!!!!!!!!!!!!!!!!!!!!
+        if (checkedShiftPose[0]<-100000)//TODO All the wrong conditions
         {
             return false;
             /* code */
         }else{
-            // if (ShiftPoseTemp[1])
-            // {
-            //     /* code */
-            // }
-            float decider = lTerminal + SP[1];
-            if (decider<WorkSpaceLimitY)
+            float executeRegisterValue = 0;
+            if (current_register_value_<register_reset_flag_)
             {
-                LimitTemp[0] = 0;
-                LimitTemp[1] = FollowLength;
-                ROS_ERROR("The upper Limit is:%d",LimitTemp[0]);
-                ROS_ERROR("The lower Limit is:%d",LimitTemp[1]);
+                executeRegisterValue = current_register_value_;
+                    /* code */
+            }
+            if (checkedShiftPose[1]<lTerminal_-WorkSpaceLimitY_)
+            {
+                ROS_WARN("Waiting mode!");
+                LimitTemp_[0] = executeRegisterValue+lTerminal_-WorkSpaceLimitY_-checkedShiftPose[1];
+                LimitTemp_[1] = LimitTemp_[0] + follow_object_length_;
+                ShiftPoseTemp_[1] = LimitTemp_[0]-lTerminal_+WorkSpaceLimitY_+shift_pose_adjust_y_;
+                ROS_WARN("4.2) The Limits are set as:");
+                ROS_WARN("The upper Limit is:%d",LimitTemp_[0]);
+                ROS_WARN("The lower Limit is:%d",LimitTemp_[1]);
+                ROS_WARN("4.3) The calculated ShiftPose for robot are x:.%2f,y:.%2f,z:.%2f,RZ:.%2f",ShiftPoseTemp_[0],ShiftPoseTemp_[1],ShiftPoseTemp_[2],ShiftPoseTemp_[5]);
                 /* code */
             }else{
-                LimitTemp[0] = int(decider-WorkSpaceLimitY);//Then it will wait untile the object reach the upperLimit
-                LimitTemp[1] = int(decider-WorkSpaceLimitY)+FollowLength;
-                ROS_ERROR("The upper Limit is:%d",LimitTemp[0]);
-                ROS_ERROR("The lower Limit is:%d",LimitTemp[1]);
+                ROS_WARN("Meeting point mode!");
+                LimitTemp_[0] = executeRegisterValue;
+                LimitTemp_[1] = LimitTemp_[0] + follow_object_length_;
+                ShiftPoseTemp_[1] = LimitTemp_[0]-checkedShiftPose[1]+shift_pose_adjust_y_;
+                ROS_WARN("4.2) The Limits are set as:");
+                ROS_WARN("The upper Limit is:%d", LimitTemp_[0]);
+                ROS_WARN("The lower Limit is:%d", LimitTemp_[1]);
+                ROS_WARN("4.3) The calculated ShiftPose for robot are x:.%2f,y:.%2f,z:.%2f,RZ:.%2f", ShiftPoseTemp_[0], ShiftPoseTemp_[1], ShiftPoseTemp_[2], ShiftPoseTemp_[5]);
             }
-            
-            // LimitTemp[0]=200; //calculate the upper limit
-            // LimitTemp[1]=400; //calculate the lower limit
-        // return ShiftPose according to the current currentRegisterValue, GraspTimes and imige's geometry_msgs/PoseStamped object_pose's position and orientation informations.
             return true;
         }
-        
-        // return Limit;
     }
 
-    bool ConveyorTrackingCommander::PoseCheck(float SP[6])
+    bool ConveyorTrackingCommander::PoseCheck(float calculatedShiftPose[6])
     {
-        float tempdecider1 = -lTerminal-WorkSpaceLimitY;//-250is the limit in Y+ direction for robot when it located in the PPosition
-        if (SP[0]<=WorkSpaceLimitX1||SP[0]>=WorkSpaceLimitX2||SP[1]<=tempdecider1||SP[1]>=80||SP[2]<=WorkSpaceLimitZ1||SP[2]>=WorkSpaceLimitZ2)
+        float ConvayorDirectionSpaceLimit; //-250is the limit in Y+ direction for robot when it located in the PPosition
+        ConvayorDirectionSpaceLimit = lTerminal_ + WorkSpaceLimitY_ - follow_object_length_;
+        if (calculatedShiftPose[0]<=shift_limit_x_low_||calculatedShiftPose[0]>=shift_limit_x_upper_||calculatedShiftPose[1]<=WorkSpaceLimitY2||calculatedShiftPose[1]>=ConvayorDirectionSpaceLimit||calculatedShiftPose[2]<=shift_limit_z_low_||calculatedShiftPose[2]>=shift_limit_z_upper_)
         {
-            ROS_ERROR("Wrong Pose, Won't do anything!!!");
+            ROS_WARN("Wrong Pose, Won't do anything!!!");
             return false;
         }else{
-            ROS_ERROR("Right Pose, going to pick it!!!");
+            ROS_INFO("Right Pose, pose check finished!");
             return true;
         }
     }
@@ -148,134 +186,122 @@ namespace conveyor_tracking_ns
     }
     void ConveyorTrackingCommander::goPikcing(const nachi_conveyor::SegmentationInfo::ConstPtr& segInfo)
     {
-        ROS_ERROR("The Goal GraspTimes: %d, Register value:.%2f",segInfo->GraspTimes,segInfo->Register_value);
-        ROS_ERROR("Start picking or not!!!");
-        //first make sure the current robot program has finished running:
-
-
-        // ROS_INFO("Receive the message: seq: %d, register value: %.2f", segInfo->object_pose.header.seq,segInfo->Register_value);
-        /*
-        callBack Function when receive the target segInfo msg:
-        1) Call the nachiConveyorRegistor service to get the currentRegister value;
-
-        2) get the currentGraspTimes through rosparam get
-
-        3) Check if the target grasp pose is ok with the: segInfo msg, currentRegistervalue, GraspFiles, currentGraspTimes
-            3.1) calculate the ShiftPoseTem according to the currentRegistervalue, Temlist, currentGraspTimes, segInfo msg
-            3.2) check if the ShiftPoseTem is OK or not,
-                if not ok, finish this call back fun
-                if ok: 1) go to pick this object and 2)update some params, e.g. Temlist, left_arm_grasp_times, 
-        */
-
-
-        //1) first to get the conveyor register's value to calculate the goal R1 and lu&ll value:
-        // handle and response the srv
+        ROS_INFO("================================================================");
+        ROS_INFO("Start deciding if the robot should go to pick or not!!!");
+        // clock_t startTime, endTime;
+        // startTime = clock();
         nachi_conveyor::nachiConveyorRegister registerRead;
         registerRead.request.Get_Conveyor_value = true;//
         conveyorRegistorReadClient.call(registerRead);
         //get the status of ConveyorRegistorValueserver,
-        //client.waitForExistence();
-        //or  we can do this:
-        // ROS_INFO("waiting for the ConveyorRegister Service to come up!!!!!");
-        ros::service::waitForService(conveyor_id);
-        bool flag1 = conveyorRegistorReadClient.call(registerRead);
-        if (flag1)
+        ros::service::waitForService(conveyor_registor_value_id_);
+        bool register_value_srv_call_flag = conveyorRegistorReadClient.call(registerRead);
+        if (register_value_srv_call_flag)
         {
-            // ROS_INFO("That's right!");
-            ROS_INFO("The Current Conveyor Registor Read value is: %.2f",registerRead.response.Register_value);
-            /* code */
+            ROS_INFO("1) Get the Current Conveyor Registor Read value is: %.2f",registerRead.response.Register_value);
+            current_register_value_ = registerRead.response.Register_value;
+            double TargetPoseTemp[7] = {segInfo->object_pose.pose.position.x, segInfo->object_pose.pose.position.y, segInfo->object_pose.pose.position.z, segInfo->object_pose.pose.orientation.x, segInfo->object_pose.pose.orientation.y, segInfo->object_pose.pose.orientation.z, segInfo->object_pose.pose.orientation.z};
+
+            bool shift_pose_calculate_flag = getShiftPose(registerRead.response.Register_value, TargetPoseTemp, segInfo->Register_value);
+
+            ROS_INFO("3) The calculated ShiftPose for chack is x:.%2f,y:.%2f,z:.%2f,RZ:.%2f", ShiftPoseTemp_[0], ShiftPoseTemp_[1], ShiftPoseTemp_[2], ShiftPoseTemp_[5]);
+
+            bool target_is_graspable_flag = PoseCheck(ShiftPoseTemp_);
+
+            if (shift_pose_calculate_flag && target_is_graspable_flag)
+            {
+                ROS_INFO("4) PoseCheck, Right Pose, now going to pick the target!!!");
+                //3) use the ShiftPoseTemp_ to initialize the ConveyorTrackingsrv
+                //3.1) call the LockLimitCalculater function to calculate the upperLimit and lowerLimit:
+                int upperLimit, lowerLimit;
+                if (LockLimitCalculater(ShiftPoseTemp_))
+                {
+                    upperLimit = LimitTemp_[0];
+                    lowerLimit = LimitTemp_[1];
+                    //3.2) create a ConveyorTrackingsrv and initialize it with the calculated Limits and ShiftPose:
+                    nachi_conveyor::nachiConveyorTracking ConveyorTrackingsrv;
+                    //initialize the srv.request values:
+                    ConveyorTrackingsrv.request.upper_limit = upperLimit;
+                    ConveyorTrackingsrv.request.lower_limit = lowerLimit;
+                    if (current_register_value_ > register_reset_flag_)
+                    {
+                        ConveyorTrackingsrv.request.ifRegisterReset = 0;
+                        /* code */
+                    }
+                    else
+                    {
+                        ConveyorTrackingsrv.request.ifRegisterReset = 2;
+                    }
+                    ConveyorTrackingsrv.request.shift_pose = {ShiftPoseTemp_[0], ShiftPoseTemp_[1], ShiftPoseTemp_[2], ShiftPoseTemp_[3], ShiftPoseTemp_[4], ShiftPoseTemp_[5]};
+                    //  classes: ['background', 'wire', 'can', 'stainless steel', 'copper chunk', 'aluminium chunk', 'foam', 'pcb', 'battery', 'useless waste']
+                    if (mode_ == "robot2")
+                    {
+                        int type;
+                        if (strcmp(segInfo->class_name.c_str(), "pcb") == 0)
+                        {
+
+                            type = 1;
+                            /* code */
+                        }
+                        if (strcmp(segInfo->class_name.c_str(), "can") == 0)
+                        {
+                            type = 2;
+                            /* code */
+                        }
+                        ConveyorTrackingsrv.request.material_Type = type;
+                        /* code */
+                    }
+                    if (mode_ == "robot1")
+                    {
+                        int type;
+                        if (strcmp(segInfo->class_name.c_str(), "wire") == 0)
+                        {
+
+                            type = 1;
+                            /* code */
+                        }
+                        if (strcmp(segInfo->class_name.c_str(), "copper chunk") == 0)
+                        {
+                            type = 2;
+                            /* code */
+                        }
+                        ConveyorTrackingsrv.request.material_Type = type;
+                        /* code */
+                    }
+                    //4) call the conveyorTrackingControl
+                    ros::service::waitForService(conveyor_tracking_srv_);
+                    // endTime = clock();
+                    // double DeltaTime = double(endTime - startTime);
+                    // ROS_ERROR("The total time used by calculting is: %.2f",DeltaTime);
+                    bool conveyor_tracking_srv_call_flag = conveyorTrackingControlClient.call(ConveyorTrackingsrv);
+                    if (conveyor_tracking_srv_call_flag)
+                    {
+                        ROS_INFO("That's right!");
+                        ROS_INFO("The robot program is about to finish running!!!");
+                        ROS_INFO("Finish Grasp ");
+                        /* code */
+                    }
+                    else
+                    {
+                        ROS_ERROR("Something goes wrong in the Robot side, Robot won't run!!!");
+                    }
+                    // ROS_ERROR("Tracking control callback finish, task %d finished!!", currentGraspTimes+1);
+                    ROS_INFO("Tracking control callback finish, task finished!!");
+                    ROS_INFO("================================================================");
+                    /* code */
+                }
+                else
+                {
+                    ROS_ERROR("Limit calculate Wrong!!! The Limt value is Wrong, so the limit is set as a very large number!!!!!!!!!!!!!!!!");
+                }
+            }
+            else
+            { //Pose Check Wrong:
+                ROS_WARN("Target Pose is invalid!!! Or the calculated ShiftPose is invalid!! Task finished!!");
+                ROS_INFO("================================================================");
+            }
         }else{
-            ROS_ERROR("Something goes wrong, you won't get the currentRegistorValue!!!");
+            ROS_ERROR("Something goes wrong, you won't get the currentRegistorValue, Please check the libnachi node!!!");
         }
-
-        //2) get the current grasp times:
-        int currentGraspTimes;
-        bool result = nh_.getParam("/left_arm_waste/left_arm_grasp_times",currentGraspTimes);
-        if (!result)
-        {
-            ROS_ERROR("the required param is not exits");
-        }
-        ROS_INFO("The Current Grasp Times is:%d",currentGraspTimes);
-
-        //3) Check if the target grasp pose is ok with the: segInfo msg, currentRegistervalue, Temlist, currentGraspTimes
-            //3.1 Calculate the ShiftPoseTemp:
-        // bool FlagSP = getShiftPose(registerRead.response.Register_value,currentGraspTimes); 
-        float TargetPoseTemp[7] = {segInfo->object_pose.pose.position.x,segInfo->object_pose.pose.position.y,segInfo->object_pose.pose.position.z,segInfo->object_pose.pose.orientation.x,segInfo->object_pose.pose.orientation.y,segInfo->object_pose.pose.orientation.z,segInfo->object_pose.pose.orientation.z};
-
-        bool FlagSP = getShiftPose(registerRead.response.Register_value,currentGraspTimes,TargetPoseTemp,segInfo->Register_value,segInfo->GraspTimes);//Calculate and Write the Target ShiftPose to the ShiftPoseTemp
-        // float ShiftPose[6]={0.0,-20.0,-5.0,0.0,0.0,0.0};//Default shift pose, It should be calculated through function getShiftPose;
-
-            //3.2 Check if the ShiftPoseTemp is ok:
-        if (!FlagSP)
-        {
-            ROS_ERROR("The ShiftPose Calculater stop working!!");
-            /* code */
-        }
-        
-        bool IfOperate = PoseCheck(ShiftPoseTemp);
-
-        //Pose is OK, then calculate the shift values and call the Conveyor_tracking_controller
-        if (FlagSP && IfOperate)
-        {
-            ROS_ERROR("Now trying to grasp target： %s, with Grasp Times when Detect:%d",segInfo->class_name,segInfo->GraspTimes);
-            //The object is graspable, then it will: 1) set rosparam $(arg np)_grasp_times as currentGraspTimes+1; 2) push the gain register's to the Tem list and; 3) use the ShiftPoseTemp to initialize the ConveyorTrackingsrv and 4) then call the conveyorTrackingControl service:
-
-            //1) set rosparam $(arg np)_grasp_times as currentGraspTimes+1:
-            nh_.setParam("/left_arm_waste/left_arm_grasp_times",currentGraspTimes+1);
-            ROS_ERROR("Finish setting currentGraspTimes as: %d", currentGraspTimes+1);
-
-            //2) update the gain register's to the Tem list:
-                //2.1) first to know where the value should be put:
-            int listLocation = currentGraspTimes%10000;//Length of GraspFiles is 100;
-                //2.2) Then to write the executed task's register's value to the listLocation of GraspFiles:
-            GraspFiles[listLocation][0] = registerRead.response.Register_value;
-            GraspFiles[listLocation][1] = currentGraspTimes;
-            GraspFiles[listLocation][2] = SumRead;
-            GraspFiles[listLocation][3] = SumValue;
-            /*
-            TODO
-            */
-           //3) use the ShiftPoseTemp to initialize the ConveyorTrackingsrv
-            //3.1) call the LockLimitCalculater function to calculate the upperLimit and lowerLimit:
-            bool FlagLimit = LockLimitCalculater(ShiftPoseTemp);
-            if (!FlagLimit)
-            {
-                ROS_ERROR("Limit calculate Wrong!!! The Limt value is Wrong!!!!!!!!!!!!!!!!");             
-                /* code */
-            }
-            int upperLimit = LimitTemp[0];
-            int lowerLimit = LimitTemp[1];
-            //3.2) create a ConveyorTrackingsrv and initialize it with the calculated Limits and ShiftPose:
-            nachi_conveyor::nachiConveyorTracking ConveyorTrackingsrv;
-            //initialize the srv.request values:
-            ConveyorTrackingsrv.request.header.seq = 1;
-            ConveyorTrackingsrv.request.header.stamp = ros::Time::now();
-            ConveyorTrackingsrv.request.header.frame_id = "frame1";
-            ConveyorTrackingsrv.request.upper_limit = upperLimit;
-            ConveyorTrackingsrv.request.lower_limit = lowerLimit;
-            ConveyorTrackingsrv.request.shift_pose = {ShiftPoseTemp[0],ShiftPoseTemp[1],ShiftPoseTemp[2],ShiftPoseTemp[3],ShiftPoseTemp[4],ShiftPoseTemp[5]};
-
-            //4) call the conveyorTrackingControl
-            //waiting for the serevice to comeup:
-            // conveyorTrackingControlClient.call(ConveyorTrackingsrv);
-            ROS_INFO("Calling the conveyor_tracking service:");
-            ros::service::waitForService(conveyor_tracking);
-            bool flag2 = conveyorTrackingControlClient.call(ConveyorTrackingsrv);
-            if (flag2)
-            {
-                ROS_INFO("That's right!");
-                ROS_INFO("The robot program is about to finish running!!!");
-                ROS_ERROR("Finish Grasp ");
-                /* code */
-            }else{
-                ROS_ERROR("Something goes wrong in the Robot side, Robot won't run!!!");
-            }
-            ROS_ERROR("Tracking control callback finish");
-            /* code */
-        }else{//Pose Check Wrong:
-            ROS_ERROR("Inviled Pose!!! Or the ShiftPose calculate goes wrong");
-        }
-
     }
-
 }
